@@ -26,7 +26,7 @@ jobs:
           TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
           CHAT_ID: ${{ secrets.CHAT_ID }}
           URLS: ${{ secrets.URLS }}
-        run: python ./bot.py
+        run: python ${{ github.workspace }}/bot.py
 
       - name: Save state (commit last.json)
         run: |
