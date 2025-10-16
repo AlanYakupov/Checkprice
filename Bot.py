@@ -2,9 +2,9 @@ import requests, re
 from bs4 import BeautifulSoup
 import os, json, time
 
-TOKEN = os.environ["TELEGRAM_TOKEN"]
-CHAT_ID = os.environ["CHAT_ID"]
-URLS = os.environ.get("URLS","").split()  # ссылки через пробел (из секретов)
+TOKEN = os.environ["7560279885:AAFjJ7yohR3RTt_x48x3wM9_jzeR0CWhMek"]
+CHAT_ID = os.environ["914013414"]
+URLS = os.environ.get("https://www.dns-shop.ru/product/39779619c38e0fd2/1000-gb-m2-nvme-nakopitel-samsung-990-pro-mz-v9p1t0bw/","").split()  # ссылки через пробел (из секретов)
 STATE = "last.json"  # тут храним прошлые цены
 
 def send(msg):
