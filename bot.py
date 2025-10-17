@@ -50,9 +50,43 @@ def price_from_html(html):
     return None
 
 def fetch(url):
-    r = requests.get(url, headers={"User-Agent":"Mozilla/5.0"}, timeout=30)
-    r.raise_for_status()
+    import requests, random, time
+    s = requests.Session()
+
+    # максимально "обычный" набор заголовков
+    headers = {
+        "User-Agent": (
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+            "AppleWebKit/537.36 (KHTML, like Gecko) "
+            "Chrome/126.0.0.0 Safari/537.36"
+        ),
+        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
+        "Accept-Language": "ru-RU,ru;q=0.9,en-US;q=0.8,en;q=0.7",
+        "Connection": "keep-alive",
+        "Upgrade-Insecure-Requests": "1",
+        "Referer": "https://www.dns-shop.ru/",
+    }
+
+    # 1) прогреваем сессию (берём куки)
+    s.get("https://www.dns-shop.ru/", headers=headers, timeout=30)
+
+    # чуть «человеческой» задержки
+    time.sleep(random.uniform(0.5, 1.2))
+
+    # 2) идём на карточку
+    r = s.get(url, headers=headers, timeout=30, allow_redirects=True)
+
+    # если 401/403 — пробуем ещё разок через небольшую паузу
+    if r.status_code in (401, 403):
+        time.sleep(random.uniform(1.0, 2.0))
+        r = s.get(url, headers=headers, timeout=30, allow_redirects=True)
+
+    # если всё равно не ок — кидаем явную ошибку
+    if r.status_code != 200:
+        raise Exception(f"HTTP {r.status_code} на {url}")
+
     return price_from_html(r.text)
+
 
 def load_state():
     if os.path.exists(STATE):
