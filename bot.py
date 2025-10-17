@@ -23,46 +23,94 @@ def send(msg):
     )
 
 def price_from_html(html):
+    import json, re
+    from bs4 import BeautifulSoup
     soup = BeautifulSoup(html, "html.parser")
-    # 1) meta itemprop=price
+
+    # 1) <meta itemprop="price" content="...">
     meta = soup.find("meta", {"itemprop": "price"})
     if meta and meta.get("content"):
-        try: return float(str(meta["content"]).replace(",", "."))
-        except: pass
-    # 2) JSON-LD offers.price
-    for tag in soup.find_all("script", {"type":"application/ld+json"}):
+        try:
+            return float(str(meta["content"]).replace(",", "."))
+        except:
+            pass
+
+    # 2) JSON-LD со структурой offers / price
+    for tag in soup.find_all("script", {"type": "application/ld+json"}):
         try:
             data = json.loads(tag.string or "{}")
             items = data if isinstance(data, list) else [data]
             for obj in items:
-                offers = isinstance(obj, dict) and obj.get("offers")
+                if not isinstance(obj, dict):
+                    continue
+                # Вложенные offers могут быть dict или list
+                offers = obj.get("offers")
                 if isinstance(offers, dict):
                     p = offers.get("price") or offers.get("lowPrice") or offers.get("highPrice")
-                    if p: return float(str(p).replace(",", "."))
-        except: pass
-    # 3) эвристика по тексту
+                    if p:
+                        return float(str(p).replace(",", "."))
+                elif isinstance(offers, list):
+                    for off in offers:
+                        if isinstance(off, dict):
+                            p = off.get("price") or off.get("lowPrice") or off.get("highPrice")
+                            if p:
+                                return float(str(p).replace(",", "."))
+        except:
+            continue
+
+    # 3) Явный блок цены на странице (часто бывает .product-buy__price)
+    block = soup.select_one(".product-buy__price, .product-card-top__buy .price__current, .price__current")
+    if block:
+        txt = block.get_text(" ", strip=True)
+        m = re.search(r"(\d[\d\s.,]{2,})", txt)
+        if m:
+            num = m.group(1).replace("\xa0", "").replace(" ", "").replace(",", ".")
+            try:
+                return float(num)
+            except:
+                pass
+
+    # 4) Фоллбэк: ищем число рядом со словами про цену в общем тексте
     txt = soup.get_text(" ", strip=True)
-    m = re.search(r"(\d[\d\s.,]{2,})\s?(₽|руб|KZT|₸|RUB|BYN)", txt, re.I)
+    m = re.search(r"(?:Цена|Стоимость|за)\D{0,15}(\d[\d\s.,]{2,})\s?(₽|руб|KZT|₸|RUB|BYN)?", txt, re.I)
     if m:
-        num = m.group(1).replace("\xa0","").replace(" ","").replace(",", ".")
-        try: return float(num)
-        except: pass
+        num = m.group(1).replace("\xa0", "").replace(" ", "").replace(",", ".")
+        try:
+            return float(num)
+        except:
+            pass
+
     return None
 
+
 def fetch(url):
-    # Фетчим страницу как реальный браузер (Chromium) и отдаём HTML парсеру
-    from playwright.sync_api import sync_playwright
+    # Открываем как реальный Chromium и ждём, пока появится цена
+    from playwright.sync_api import sync_playwright, TimeoutError as PWTimeout
     with sync_playwright() as p:
         browser = p.chromium.launch(headless=True)
-        ctx = browser.new_context(locale="ru-RU")
+        ctx = browser.new_context(
+            locale="ru-RU",
+            user_agent=("Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                        "AppleWebKit/537.36 (KHTML, like Gecko) "
+                        "Chrome/126.0.0.0 Safari/537.36")
+        )
         page = ctx.new_page()
-        # прогрев главной
+        # прогрев — чтобы получить куки города
         page.goto("https://www.dns-shop.ru/", wait_until="domcontentloaded", timeout=60000)
+        page.wait_for_timeout(700)  # маленькая человеческая пауза
         # карточка товара
         page.goto(url, wait_until="domcontentloaded", timeout=60000)
+
+        # ждём что-то одно из трёх: meta price / блок цены / JSON-LD
+        try:
+            page.wait_for_selector('meta[itemprop="price"], .product-buy__price, script[type="application/ld+json"]', timeout=15000)
+        except PWTimeout:
+            pass  # всё равно заберём контент — вдруг цена есть в тексте
+
         html = page.content()
         browser.close()
     return price_from_html(html)
+
 
 
 
